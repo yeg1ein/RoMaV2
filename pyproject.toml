@@ -29,6 +29,10 @@ eval = [
     "wandb>=0.23.0",
     "wxbs-benchmark>=0.0.4",
 ]
+train = [
+    "h5py>=3.10.0",
+    "wandb>=0.23.0",
+]
 dev = [
     "slurm-util>=0.2.7",
     "ruff>=0.14.5",
