@@ -129,7 +129,8 @@ By default the trained parts start from the released weights, i.e. the commands 
 add `--from-scratch` to reproduce the paper's training (random init of matcher/refiners, ImageNet VGG19,
 frozen DINOv3 taken from the released checkpoint). `--help` lists all options (`TrainCfg` in `train/train.py`).
 
-Each run writes `checkpoint.pt` (for `--resume`) and `romav2_<stage>.pt`, a full model state dict with EMA weights:
+Each run writes `checkpoint.pt` (for `--resume`, holds the live weights) and `romav2_<stage>.pt`, a full model state
+dict with the EMA weights (decay 0.999 with the usual warm-up `min(0.999, (1+n)/(10+n))`, so short runs are usable too):
 ```python
 model = RoMaV2(RoMaV2.Cfg(pretrained=False))
 model.load_state_dict(torch.load("runs/refiners/romav2_refiners.pt"))

@@ -3,7 +3,8 @@
 Stage "matcher" (Sec. 3.2): 300k steps, batch 128, lr 4e-4, random resolution per batch.
 Stage "refiners" (Sec. 3.3): 300k steps, batch 64, lr 4e-4, 640 x 640, EMA (0.999).
 Both stages use AdamW. The paper does not state the schedule; we use linear warmup
-followed by cosine decay, and clip the gradient norm.
+followed by cosine decay, and clip the gradient norm. The exported weights are the EMA
+weights (with the usual decay warm-up); the in-loop evaluation uses the live weights.
 
 Run with ``python -m romav2.train --help``; multi-GPU with ``torchrun --nproc_per_node N``.
 """
@@ -22,7 +23,7 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel
-from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
+from torch.optim.swa_utils import AveragedModel
 from torch.utils.data import ConcatDataset, DataLoader, WeightedRandomSampler
 
 from romav2.device import device
@@ -132,6 +133,23 @@ def build_val_dataset(cfg: TrainCfg) -> PairDataset | None:
     return JsonPairDataset(cfg.val, augment=False)
 
 
+def ema_avg_fn(decay: float):
+    """EMA update for ``AveragedModel`` with the usual decay warm-up
+    min(decay, (1 + n) / (10 + n)) (as in TensorFlow's ExponentialMovingAverage / timm), so that
+    short runs are not dominated by the initial weights. Equals ``decay`` after ~10k steps."""
+
+    @torch.no_grad()
+    def update(averaged: list[torch.Tensor], current: list[torch.Tensor], num_averaged: torch.Tensor):
+        d = min(decay, (1 + num_averaged.item()) / (10 + num_averaged.item()))
+        if torch.is_floating_point(averaged[0]):
+            torch._foreach_lerp_(averaged, current, 1 - d)
+        else:  # integer buffers (e.g. BatchNorm num_batches_tracked)
+            for a, c in zip(averaged, current):
+                a.copy_(c)
+
+    return update
+
+
 def lr_lambda(step: int, warmup: int, total: int) -> float:
     if step < warmup:
         return (step + 1) / warmup
@@ -201,7 +219,7 @@ def train(cfg: TrainCfg, datasets: list[PairDataset] | None = None, weights: lis
     model = build_model(cfg)
     stage = build_stage(cfg, model)
     trainable = nn.ModuleDict(stage.trainable_modules())
-    ema = AveragedModel(trainable, multi_avg_fn=get_ema_multi_avg_fn(cfg.ema_decay), use_buffers=True)
+    ema = AveragedModel(trainable, multi_avg_fn=ema_avg_fn(cfg.ema_decay), use_buffers=True)
     optimizer = torch.optim.AdamW(trainable.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer, lambda s: lr_lambda(s, cfg.warmup, cfg.steps)
