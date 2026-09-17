@@ -276,12 +276,15 @@ class MegaDepthDataset(PairDataset):
         max_pairs: int = 100_000,
         shake_t: int = 32,
         seed: int = 0,
+        scenes: list[str] | None = None,  # explicit scene files (e.g. ["0015.npy"]) instead of a split
         **kwargs,
     ):
         super().__init__(shake_t=shake_t, **kwargs)
         self.data_root = Path(data_root)
         names = sorted(p.name for p in (self.data_root / "prep_scene_info").glob("*.npy"))
-        if split == "train":
+        if scenes is not None:
+            names = [n for n in names if n in set(scenes)]
+        elif split == "train":
             names = [n for n in names if n not in self.TEST_SCENES | self.IGNORED_SCENES]
         elif split == "test":
             names = [n for n in names if n in self.TEST_SCENES]
