@@ -80,7 +80,14 @@ def warps_from_depth(
     warp_BA, mask_BA = warp_and_overlap_from_depth(
         depth_A=d_B, depth_B=d_A, K_A=K_B[None], K_B=K_A[None], T_AB=T_AB.inverse()[None], **kwargs
     )
-    return warp_AB[0], mask_AB[0], warp_BA[0], mask_BA[0]
+    return _sanitize(warp_AB[0]), mask_AB[0], _sanitize(warp_BA[0]), mask_BA[0]
+
+
+def _sanitize(warp: torch.Tensor) -> torch.Tensor:
+    """Invalid depth (0) maps to non-finite or huge coordinates. Those pixels are never
+    covisible, but inf * 0 = NaN would still poison masked losses and bilinear resampling,
+    so replace them by a finite out-of-frame value."""
+    return torch.nan_to_num(warp, nan=-2.0, posinf=-2.0, neginf=-2.0).clamp(-2.0, 2.0)
 
 
 def flow_to_warp(flow: torch.Tensor) -> torch.Tensor:
@@ -215,8 +222,8 @@ class PairDataset(Dataset):
     def _warp_gt(self, pair: dict):
         warp_AB = torch.as_tensor(np.asarray(pair["warp_A_to_B"]), dtype=torch.float32)
         warp_BA = torch.as_tensor(np.asarray(pair["warp_B_to_A"]), dtype=torch.float32)
-        warp_AB = bhwc_interpolate(warp_AB[None], self.size, mode="bilinear", align_corners=False)
-        warp_BA = bhwc_interpolate(warp_BA[None], self.size, mode="bilinear", align_corners=False)
+        warp_AB = _sanitize(bhwc_interpolate(warp_AB[None], self.size, mode="bilinear", align_corners=False))
+        warp_BA = _sanitize(bhwc_interpolate(warp_BA[None], self.size, mode="bilinear", align_corners=False))
         mask_AB = overlap_from_warps(warp_AB, warp_BA, error_threshold=CYCLE_ERROR_THRESHOLD)
         mask_BA = overlap_from_warps(warp_BA, warp_AB, error_threshold=CYCLE_ERROR_THRESHOLD)
         return warp_AB[0], mask_AB[0], warp_BA[0], mask_BA[0]

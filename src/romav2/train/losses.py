@@ -24,9 +24,11 @@ from romav2.geometry import to_pixel
 
 
 def masked_mean(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    """Mean of ``x`` over ``mask`` (bool). Zero (with grad) if the mask is empty."""
-    mask = mask.to(x.dtype)
-    return (x * mask).sum() / mask.sum().clamp_min(1.0)
+    """Mean of ``x`` over ``mask`` (bool). Zero (with grad) if the mask is empty.
+    Uses ``where`` rather than ``x * mask`` so that non-finite masked-out entries cannot
+    leak NaN into the result."""
+    x = torch.where(mask, x, torch.zeros_like(x))
+    return x.sum() / mask.sum().clamp_min(1)
 
 
 def warp_loss(
