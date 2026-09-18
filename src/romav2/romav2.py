@@ -28,6 +28,10 @@ from romav2.types import Setting, ImageLike
 
 logger = logging.getLogger(__name__)
 
+RELEASED_WEIGHTS_URL = (
+    "https://github.com/Parskatt/RoMaV2/releases/download/v2.0.1/romav2.0.1.pt"
+)
+
 
 def _interpolate_warp_and_confidence(
     *,
@@ -79,6 +83,8 @@ class RoMaV2(nn.Module):
         setting: Setting = "precise"
         compile: bool = False
         name: str = "RoMa v2"
+        # load the released weights (set to False to train from scratch or load your own)
+        pretrained: bool = True
 
     # settings
     H_lr: int
@@ -94,11 +100,7 @@ class RoMaV2(nn.Module):
         if cfg is None:
             # default
             cfg = RoMaV2.Cfg()
-            
-        weights = torch.hub.load_state_dict_from_url(
-            "https://github.com/Parskatt/RoMaV2/releases/download/v2.0.1/romav2.0.1.pt",
-            map_location=device
-        )
+
         self.f = Descriptor(cfg.descriptor)
         self.matcher = Matcher(cfg.matcher)
         self.cfg = cfg
@@ -110,7 +112,11 @@ class RoMaV2(nn.Module):
         self.eval()
         self.apply_setting(cfg.setting)
         self.name = cfg.name
-        self.load_state_dict(weights)
+        if cfg.pretrained:
+            weights = torch.hub.load_state_dict_from_url(
+                RELEASED_WEIGHTS_URL, map_location=device
+            )
+            self.load_state_dict(weights)
         if cfg.compile:
             logger.info(f"Compiling {self.name}...")
             self.compile()

@@ -114,6 +114,46 @@ Some important ones, which we enable setting to some reasonable defaults through
 
 `model.balanced_sampling`: Diverse sampling, same as RoMa. Typically helps to get better RANSAC estimates.
 
+## Training / fine-tuning
+Research training code following the paper lives in `src/romav2/train` (install with `uv sync --extra train`).
+Training is two-stage (Sec. 3.1): first the coarse matcher, then the refiners on top of the frozen matcher.
+
+```bash
+# stage 1: coarse matcher (paper: 300k steps, batch 128, lr 4e-4, random resolution per batch)
+python -m romav2.train --stage matcher --out runs/matcher --megadepth data/megadepth --pairs data/hypersim.json data/flyingthings.json
+# stage 2: refiners (paper: 300k steps, batch 64, 640x640, EMA 0.999)
+python -m romav2.train --stage refiners --out runs/refiners --init runs/matcher/romav2_matcher.pt --batch-size 64 --megadepth data/megadepth
+# multi-GPU: torchrun --nproc_per_node 2 -m romav2.train ...   (use --accum to reach the paper's batch size)
+```
+By default the trained parts start from the released weights, i.e. the commands above *fine-tune*;
+add `--from-scratch` to reproduce the paper's training (random init of matcher/refiners, ImageNet VGG19,
+frozen DINOv3 taken from the released checkpoint). `--help` lists all options (`TrainCfg` in `train/train.py`).
+
+Each run writes `checkpoint.pt` (for `--resume`, holds the live weights) and `romav2_<stage>.pt`, a full model state
+dict with the EMA weights (decay 0.999 with the usual warm-up `min(0.999, (1+n)/(10+n))`, so short runs are usable too):
+```python
+model = RoMaV2(RoMaV2.Cfg(pretrained=False))
+model.load_state_dict(torch.load("runs/refiners/romav2_refiners.pt"))
+```
+
+**Data.** `--megadepth` uses the DKM/RoMa MegaDepth layout (`prep_scene_info/*.npy`, images, depth h5) with the pair
+selection and scene weighting of the paper. Any other dataset (the rest of Table 3, or your own pairs) is given as a
+JSON index (`--pairs a.json b.json`, sampled proportionally to its `weight`):
+```json
+{"name": "mydata", "weight": 1.0, "root": "/data/mydata", "pairs": [
+  {"img_A": "a.png", "img_B": "b.png", "depth_A": "a.npy", "depth_B": "b.npy", "K_A": [[...]], "K_B": [[...]], "T_AB": [[...]]},
+  {"img_A": "c.png", "img_B": "d.png", "flow_A_to_B": "cd.npy", "flow_B_to_A": "dc.npy"}
+]}
+```
+Ground truth is depth consistency (Eq. 17) for depth pairs (`K` at image resolution, `T_AB` camera A to B, depth 0/NaN
+invalid) and warp cycle consistency (Eq. 18) for flow (`flow_*`, pixels) or normalized warp (`warp_*`) pairs.
+See `JsonPairDataset` / `PairDataset` in `train/data.py` to add a dataset in Python instead.
+`tests/test_train_smoke.py` runs both stages for a few steps on synthetic pairs.
+
+**Deviations from the paper** (not specified there, or simplified): warmup + cosine learning-rate schedule with AdamW
+(weight decay 0.01, gradient clipping 1.0); losses are averaged over covisible pixels; ground truth is computed at
+640x640 and resampled to the prediction resolutions; only MegaDepth has a built-in loader.
+
 ## License
 All our code except DINOv3 is MIT license.
 DINOv3 has a custom license, see [DINOv3](https://github.com/facebookresearch/dinov3/tree/main?tab=License-1-ov-file#readme).

@@ -157,7 +157,8 @@ def pose_auc(errors, thresholds):
         last_index = np.searchsorted(errors, t)
         r = np.r_[recall[:last_index], recall[last_index - 1]]
         e = np.r_[errors[:last_index], t]
-        aucs.append(np.trapz(r, x=e) / t)  # type: ignore
+        trapezoid = getattr(np, "trapezoid", None) or np.trapz  # np.trapz removed in numpy 2
+        aucs.append(trapezoid(r, x=e) / t)  # type: ignore
     return aucs
 
 
