@@ -4,3 +4,5 @@ __pycache__/
 *.pt
 wandb/
 uv.lock
+
+paper/
