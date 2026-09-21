@@ -99,6 +99,26 @@ def test_ground_truth_from_depth_fronto_parallel_plane():
     assert mask_BA[:, 33:].all() and not mask_BA[:, :31].any()
 
 
+def test_ground_truth_is_finite_with_invalid_depth():
+    """Depth 0 / NaN (invalid) must give finite warps and non-covisible masks, and a loss
+    with finite gradient (inf * 0 = NaN would otherwise poison masked losses)."""
+    H, W = 32, 32
+    depth = torch.ones(H, W)
+    depth[:8] = 0.0
+    depth[8:12] = float("nan")
+    K = torch.tensor([[W, 0, W / 2], [0, W, H / 2], [0, 0, 1.0]])
+    T_AB = torch.eye(4)
+    T_AB[2, 3] = -1.0  # camera B one unit forward: depth-0 points would land at z = -1
+    warp_AB, mask_AB, warp_BA, mask_BA = warps_from_depth(depth, depth, K, K, T_AB)
+    for w, m in ((warp_AB, mask_AB), (warp_BA, mask_BA)):
+        assert torch.isfinite(w).all() and w.abs().max() <= 2
+        assert not m[:12].any()
+    pred = torch.zeros(1, H, W, 2, requires_grad=True)
+    loss = warp_loss(pred, warp_AB[None], mask_AB[None, ..., 0] > 0.5, stride=1)
+    loss.backward()
+    assert torch.isfinite(loss) and torch.isfinite(pred.grad).all()
+
+
 def test_flow_to_warp_and_flip():
     H, W = 8, 10
     flow = torch.zeros(H, W, 2)

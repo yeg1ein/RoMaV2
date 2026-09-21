@@ -83,8 +83,13 @@ def warp_and_overlap_from_depth(
     x = from_homogeneous(x)
     warp = to_normalized(x, H=H_B, W=W_B)
     z_AB = x_AB[..., -1:]
+    # invalid source depth (0 / NaN) projects to the epipole and must never count as covisible
+    valid_depth_A = (depth_A > 0.0).logical_and(depth_A.isfinite())
     pos_and_finite_depth = (
-        (z_AB > 0.0).logical_and(z_AB.isfinite()).logical_and(~depth_B.isnan())
+        (z_AB > 0.0)
+        .logical_and(z_AB.isfinite())
+        .logical_and(~depth_B.isnan())
+        .logical_and(valid_depth_A)
     )
     z_B = bhwc_grid_sample(depth_B, warp, mode="bilinear", align_corners=False)
     rel_depth_error = (z_B - z_AB) / z_B
