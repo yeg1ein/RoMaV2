@@ -6,3 +6,4 @@ wandb/
 uv.lock
 
 paper/
+runs/
