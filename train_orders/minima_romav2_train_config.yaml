@@ -1,0 +1,36 @@
+MINIMA_ROMAV2:
+  dataset:
+    # MegaDepth root (DKM/RoMa layout) with the MegaDepth-Syn modality dirs inside it,
+    # relative to the RoMaV2 repo root or absolute.
+    data_root: data/megadepth
+    # Parent of the <modality>/ directories; leave empty to use data_root.
+    modality_root: ''
+    # any of: visible, infrared, depth, normal, event, sketch, paint
+    modality: [ visible, infrared, depth, normal ]
+    # 'megadepth' -> MINIMA Mega-1500 scenes, a JSON index path, or '' for no validation
+    val: megadepth
+
+  train:
+    stage: matcher            # matcher | refiners (train the matcher first)
+    exp_name: minima_romav2_matcher
+    steps: 50000
+    batch_size: 4             # per GPU
+    accum: 8                  # effective batch = batch_size * accum * n_gpus
+    lr: 1.0e-4                # lower than the paper's 4e-4: this is a fine-tune
+    workers: 8
+    bidirectional: true
+    n_nodes: 1
+    n_gpus_per_node: 4
+    log_every: 50
+    ckpt_every: 5000
+    eval_every: 5000
+    seed: 0
+    wandb: false
+
+  weight:
+    # false -> --from-scratch (random init of the trained parts, as in the paper)
+    pre_trained: true
+    # optional full RoMaV2 state dict to start from, e.g. the stage-1 export
+    # 'train_results/minima_romav2/workspace_minima_romav2_matcher/romav2_matcher.pt'
+    init_path: ''
+    resume_from_checkpoint: false # if true, resume checkpoint.pt of the exp_name workspace
