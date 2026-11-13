@@ -7,3 +7,5 @@ uv.lock
 
 paper/
 runs/
+
+.claude/worktrees/
